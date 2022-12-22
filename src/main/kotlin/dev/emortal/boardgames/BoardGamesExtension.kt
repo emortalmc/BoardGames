@@ -1,5 +1,6 @@
 package dev.emortal.boardgames
 
+import dev.emortal.boardgames.game.MapUtil
 import dev.emortal.boardgames.game.MinesweeperGame
 import dev.emortal.immortal.game.GameManager
 import net.kyori.adventure.text.Component
@@ -66,13 +67,14 @@ class BoardGamesExtension : Extension() {
         }
 
 
-        eventNode.addListener(PlayerSpawnEvent::class.java) {
-            if (it.isFirstSpawn) {
-                it.player.setResourcePack(MinesweeperGame.resourcePack)
-            }
+//        eventNode.addListener(PlayerSpawnEvent::class.java) {
+//            if (it.isFirstSpawn) {
+//                it.player.setResourcePack(MinesweeperGame.resourcePack)
+//            }
+//
+//        }
 
-        }
-
+        MapUtil.createMaps()
 
         GameManager.registerGame<MinesweeperGame>(
             "minesweeper",
