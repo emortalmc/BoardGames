@@ -16,9 +16,9 @@ object MapUtil {
         repeat(8) {
             packets.add(packetFromPath("icons/block/${it + 1}.png", it + 1))
         }
-        repeat(6) {
-            packets.add(packetFromPath("icons/flag/flag${it + 1}.png", it + 1 + 8))
-        }
+//        repeat(6) {
+//            packets.add(packetFromPath("icons/flag/flag${it + 1}.png", it + 1 + 8))
+//        }
     }
 
     fun playerInit(player: Player) {

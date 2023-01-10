@@ -11,4 +11,6 @@ enum class TeamColor(val block: Block, val textColor: NamedTextColor) {
     BLUE(Block.BLUE_CARPET, NamedTextColor.BLUE),
     PINK(Block.PINK_CARPET, NamedTextColor.LIGHT_PURPLE),
     PURPLE(Block.PURPLE_CARPET, NamedTextColor.DARK_PURPLE),
+    AQUA(Block.CYAN_CARPET, NamedTextColor.AQUA),
+    YELLOW(Block.YELLOW_CARPET, NamedTextColor.YELLOW),
 }

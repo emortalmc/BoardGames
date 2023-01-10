@@ -4,14 +4,18 @@ import dev.emortal.boardgames.game.MinesweeperLoseMessages.loseMessages
 import dev.emortal.immortal.game.Game
 import dev.emortal.immortal.game.GameManager
 import dev.emortal.immortal.game.GameState
+import dev.emortal.immortal.util.roundToBlock
 import net.kyori.adventure.sound.Sound
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.minestom.server.MinecraftServer
+import net.minestom.server.coordinate.Point
 import net.minestom.server.coordinate.Pos
+import net.minestom.server.entity.EntityType
 import net.minestom.server.entity.GameMode
 import net.minestom.server.entity.Player
 import net.minestom.server.event.EventNode
+import net.minestom.server.event.entity.EntityAttackEvent
 import net.minestom.server.event.inventory.InventoryPreClickEvent
 import net.minestom.server.event.player.PlayerBlockBreakEvent
 import net.minestom.server.event.player.PlayerBlockInteractEvent
@@ -21,17 +25,11 @@ import net.minestom.server.instance.Chunk
 import net.minestom.server.instance.Instance
 import net.minestom.server.instance.batch.AbsoluteBlockBatch
 import net.minestom.server.instance.block.Block
-import net.minestom.server.resourcepack.ResourcePack
-import net.minestom.server.scoreboard.Team
 import net.minestom.server.sound.SoundEvent
 import net.minestom.server.tag.Tag
 import net.minestom.server.timer.TaskSchedule
 import net.minestom.server.utils.NamespaceID
 import org.tinylog.kotlin.Logger
-import world.cepi.kstom.Manager
-import world.cepi.kstom.event.listenOnly
-import java.net.URL
-import java.security.MessageDigest
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,15 +39,16 @@ class MinesweeperGame : Game() {
 
     override val maxPlayers: Int = 5
     override val minPlayers: Int = 1
-    override val countdownSeconds: Int = 20
-    override val canJoinDuringGame: Boolean = false
+    override val countdownSeconds: Int = 0
+    override val canJoinDuringGame: Boolean = true
     override val showScoreboard: Boolean = true
     override val showsJoinLeaveMessages: Boolean = true
     override val allowsSpectators: Boolean = true
 
     companion object {
         const val Y_OFFSET = 64
-        const val BOARD_SIZE = 25
+        const val BOARD_SIZE = 30
+        const val ENABLE_SOLVER = false
 
         val playerTeamTag = Tag.Integer("team")
 
@@ -89,6 +88,7 @@ class MinesweeperGame : Game() {
     lateinit var board: Array<IntArray>
     val flags = AtomicInteger(0)
     val bombs = mutableListOf<GridPos>()
+    var bombsToGenerate = 170
     var bombsGenerated = AtomicBoolean(false)
     var firstClick = AtomicBoolean(true)
 
@@ -97,178 +97,32 @@ class MinesweeperGame : Game() {
     override fun gameCreated() {
         val eventNode = instance!!.eventNode()
 
-        eventNode.listenOnly<PlayerBlockPlaceEvent> {
-            isCancelled = true
-            player.inventory.update()
-            player.chunk?.sendChunk(player)
+        eventNode.addListener(PlayerBlockPlaceEvent::class.java) { e ->
+            e.isCancelled = true
+            e.player.inventory.update()
+            e.player.chunk?.sendChunk(e.player)
         }
 
-        eventNode.listenOnly<InventoryPreClickEvent> {
-            isCancelled = true
+        eventNode.addListener(InventoryPreClickEvent::class.java) { e ->
+            e.isCancelled = true
         }
 
-        eventNode.listenOnly<PlayerBlockBreakEvent> {
-            isCancelled = true
-
-            if (player.hasTag(GameManager.playerSpectatingTag)) return@listenOnly
-            if (gameState != GameState.PLAYING) return@listenOnly
-
-            if (block.name().endsWith("carpet")) {
-                return@listenOnly
-            }
-            if (instance.getBlock(blockPosition.add(0.0, 1.0, 0.0)).name().endsWith("carpet")) {
-                return@listenOnly
+        eventNode.addListener(PlayerBlockBreakEvent::class.java) { e ->
+            e.isCancelled = true
+            if (e.block.name().endsWith("carpet")) {
+                return@addListener
             }
 
-            val boardSizeX = board.size
-            val boardSizeZ = board.first().size
-
-            if (
-                blockPosition.blockY() != Y_OFFSET ||
-                blockPosition.blockX() >= boardSizeX || blockPosition.blockX() < 0 ||
-                blockPosition.blockZ() >= boardSizeZ || blockPosition.blockZ() < 0
-            ) {
-                return@listenOnly
-            }
-
-            if (player.itemInMainHand.isAir) {
-                val clickedX = blockPosition.blockX()
-                val clickedZ = blockPosition.blockZ()
-
-                val clickedSquare = board[clickedX][clickedZ]
-
-                if (clickedSquare == GridConstants.BOMB) {
-                    // lose :)
-                    val startingBatch = AbsoluteBlockBatch()
-
-                    bombs.forEach {
-                        startingBatch.setBlock(it.x, Y_OFFSET, it.z, Block.TNT)
-                    }
-                    startingBatch.setBlock(blockPosition, Block.TNT)
-
-                    startingBatch.apply(instance) {
-                        instance.setBlock(blockPosition, Block.TNT)
-                    }
-
-                    playerThatLost = player.uuid
-                    victory(emptyList())
-                    sendMessage(
-                        Component.text()
-                            .append(Component.text(player.username, NamedTextColor.RED))
-                            .append(Component.space())
-                            .append(Component.text(loseMessages.random(), NamedTextColor.GRAY))
-                            .build()
-                    )
-
-//                    spawnTNT(blockPosition.add(0.5, 0.0, 0.5), instance, 30)
-
-                    return@listenOnly
-                }
-
-                val surroundingBombs = GridUtils.bombsSurrounding(board, clickedX, clickedZ)
-
-                if (clickedSquare != surroundingBombs) {
-                    board[clickedX][clickedZ] = surroundingBombs
-                    GridConstants.spawnMapFromNumber(surroundingBombs, instance, blockPosition.withY(Y_OFFSET.toDouble()))
-
-                    player.playSound(
-                        Sound.sound(
-                            SoundEvent.ENTITY_ITEM_PICKUP,
-                            Sound.Source.MASTER,
-                            0.5f,
-                            0.7f
-                        ),
-                        Sound.Emitter.self()
-                    )
-                }
-
-                var future = CompletableFuture.completedFuture(null)
-                val changed = if (firstClick.get()) {
-                    firstClick.set(false)
-
-                    var iter = 0
-                    var list: List<GridPos>
-                    var batch: AbsoluteBlockBatch
-                    while (true) {
-                        batch = generateBoard()
-                        generateBombs(board, boardSizeX, boardSizeZ, clickedX, clickedZ)
-                        list = GridUtils.revealOpen(board, clickedX, clickedZ)
-
-                        if (solve(board)) {
-                            break
-                        }
-
-                        iter++
-                    }
-
-                    board[clickedX][clickedZ] = 0
-                    GridConstants.spawnMapFromNumber(0, instance, blockPosition.withY(Y_OFFSET.toDouble()))
-
-                    Logger.info("Took ${iter} iterations to get a solvable board")
-
-                    future = CompletableFuture()
-                    batch.apply(instance) {
-                        future.complete(null)
-                    }
-
-                    list
-                } else {
-                    GridUtils.revealOpen(board, clickedX, clickedZ)
-                }
-
-                val unrevealed = board.sumOf { it.count { it == GridConstants.UNREVEALED } }
-                if (unrevealed <= 0) {
-                    victory(players)
-                }
-
-                if (changed.isNotEmpty()) {
-                    future.thenRun {
-                        var currentIter = 0
-                        instance.scheduler().submitTask {
-                            instance.playSound(
-                                Sound.sound(
-                                    SoundEvent.ENTITY_ITEM_PICKUP,
-                                    Sound.Source.MASTER,
-                                    0.5f,
-                                    0.7f + (currentIter.toFloat() / 50f / 5f)
-                                ), Sound.Emitter.self()
-                            )
-
-                            repeat(5) {
-                                val it = changed[currentIter]
-
-                                val x = it.x
-                                val z = it.z
-                                val gridSquare = board[x][z]
-
-                                GridConstants.spawnMapFromNumber(gridSquare, instance, Pos(x.toDouble(), Y_OFFSET.toDouble(), z.toDouble()))
-                                instance.setBlock(
-                                    x, Y_OFFSET + 1, z,
-                                    Block.AIR
-                                )
-
-                                currentIter++
-                                if (currentIter >= changed.size) {
-                                    return@submitTask TaskSchedule.stop()
-                                }
-                            }
-
-                            TaskSchedule.nextTick()
-                        }
-                    }
-                }
-            }
+            breakBlock(e.player, e.instance, e.blockPosition)
         }
     }
 
-    private fun generateBombs(board: Array<IntArray>, boardSizeX: Int, boardSizeZ: Int, clickedX: Int, clickedZ: Int) {
+    fun generateBombs(board: Array<IntArray>, bombAmount: Int, clickedX: Int, clickedZ: Int) {
         bombs.clear()
 
         // Generate random bombs
         var bombsPlaced = 0
-
-        val bombsToPlace = ((boardSizeX * boardSizeZ).toDouble() * 0.16).toInt()
-        while (bombsPlaced < bombsToPlace) {
+        while (bombsPlaced < bombAmount) {
             val randomX = board.indices.random()
             val randomZ = board.first().indices.random()
 
@@ -298,17 +152,6 @@ class MinesweeperGame : Game() {
         instance!!.scheduler().buildTask {
             refreshActionbar(instance!!, bombs.size, flags.get())
         }.repeat(TaskSchedule.tick(30)).schedule()
-
-        players.forEachIndexed { i, it ->
-            it.setTag(playerTeamTag, i)
-
-            val teamColors = TeamColor.values()
-            val teamColor = teamColors[i % teamColors.size]
-            val team = dev.emortal.immortal.game.Team(teamColor.name, teamColor.textColor)
-
-            it.displayName = Component.text(it.username, teamColor.textColor)
-            it.team = team.scoreboardTeam
-        }
     }
 
     override fun gameEnded() {
@@ -316,6 +159,20 @@ class MinesweeperGame : Game() {
     }
 
     override fun playerJoin(player: Player) {
+
+
+        val index = synchronized(players) {
+            players.indexOf(player)
+        }
+
+        player.setTag(playerTeamTag, index)
+
+        val teamColors = TeamColor.values()
+        val teamColor = teamColors[index % teamColors.size]
+        val team = dev.emortal.immortal.game.Team(teamColor.name, teamColor.textColor)
+
+        player.displayName = Component.text(player.username, teamColor.textColor)
+        player.team = team.scoreboardTeam
 
         MapUtil.playerInit(player)
 
@@ -329,19 +186,55 @@ class MinesweeperGame : Game() {
     override fun playerLeave(player: Player) {
     }
 
-    override fun registerEvents(eventNode: EventNode<InstanceEvent>) = with(eventNode) {
+    override fun registerEvents(eventNode: EventNode<InstanceEvent>) {
 
-        listenOnly<PlayerBlockInteractEvent> {
-            if (player.hasTag(GameManager.playerSpectatingTag)) return@listenOnly
-            if (hand != Player.Hand.MAIN) return@listenOnly
+        eventNode.addListener(EntityAttackEvent::class.java) { e ->
+            val player = e.entity as? Player ?: return@addListener
+
+            if (e.target.entityType != EntityType.GLOW_ITEM_FRAME) return@addListener
+
+            val roundedPos = e.target.position.roundToBlock()
+
+            var flagSurrounding = 0
+            for (x in -1..1) {
+                for (z in -1..1) {
+                    val block = e.instance.getBlock(roundedPos.add(x.toDouble(), 0.0, z.toDouble()))
+                    if (block.name().endsWith("carpet")) {
+                        flagSurrounding++
+                    }
+                }
+            }
+
+            val bombSurrounding = GridUtils.bombsSurrounding(board, roundedPos.blockX(), roundedPos.blockZ())
+
+            Logger.info("Flags: ${flagSurrounding}")
+            Logger.info("Bombs: ${bombSurrounding}")
+
+            if (flagSurrounding == bombSurrounding) {
+                GridUtils.neighbours(board, roundedPos.blockX(), roundedPos.blockZ())
+                    .filter { it.second == GridConstants.UNREVEALED }
+                    .forEach {
+                        breakBlock(player, e.instance, roundedPos.sub(0.0, 1.0, 0.0))
+                    }
+            }
+
+        }
+
+        eventNode.addListener(PlayerBlockInteractEvent::class.java) { e ->
+            val player = e.player
+            val block = e.block
+            val blockPosition = e.blockPosition
+
+            if (player.hasTag(GameManager.playerSpectatingTag)) return@addListener
+            if (e.hand != Player.Hand.MAIN) return@addListener
 
             if (block.name().endsWith("carpet")) {
-                instance.setBlock(blockPosition, Block.AIR)
+                e.instance.setBlock(blockPosition, Block.AIR)
 
                 player.playSound(Sound.sound(SoundEvent.ENTITY_ITEM_PICKUP, Sound.Source.MASTER, 0.6f, 1.8f))
 
-                refreshActionbar(instance, bombs.size, flags.decrementAndGet())
-                return@listenOnly
+                refreshActionbar(e.instance, bombs.size, flags.decrementAndGet())
+                return@addListener
             }
 
             val boardSizeX = board.size
@@ -352,27 +245,28 @@ class MinesweeperGame : Game() {
                 blockPosition.blockX() >= boardSizeX || blockPosition.blockX() < 0 ||
                 blockPosition.blockZ() >= boardSizeZ || blockPosition.blockZ() < 0
             ) {
-                isCancelled = true
-                return@listenOnly
+                e.isCancelled = true
+                return@addListener
             }
 
-            if (instance.getBlock(blockPosition.add(0.0, 1.0, 0.0)).name().endsWith("carpet")) {
-                isCancelled = true
-                return@listenOnly
+            if (e.instance.getBlock(blockPosition.add(0.0, 1.0, 0.0)).name().endsWith("carpet")) {
+                e.isCancelled = true
+                return@addListener
             }
 
             val gridSquare = board[blockPosition.blockX()][blockPosition.blockZ()]
 
             if (gridSquare != GridConstants.UNREVEALED && gridSquare != GridConstants.BOMB) {
-                isCancelled = true
-                return@listenOnly
+                e.isCancelled = true
+                return@addListener
             }
 
-            val teamColor = TeamColor.values()[player.getTag(playerTeamTag)]
-            instance.setBlock(blockPosition.add(0.0, 1.0, 0.0), teamColor.block)
+            val teamValues = TeamColor.values()
+            val teamColor = teamValues[player.getTag(playerTeamTag) % teamValues.size]
+            e.instance.setBlock(blockPosition.add(0.0, 1.0, 0.0), teamColor.block)
             player.playSound(Sound.sound(SoundEvent.ENTITY_ENDER_DRAGON_FLAP, Sound.Source.MASTER, 0.6f, 2f))
 
-            refreshActionbar(instance, bombs.size, flags.incrementAndGet())
+            refreshActionbar(e.instance, bombs.size, flags.incrementAndGet())
 
         }
     }
@@ -380,8 +274,8 @@ class MinesweeperGame : Game() {
     override fun instanceCreate(): CompletableFuture<Instance> {
         val instanceFuture = CompletableFuture<Instance>()
 
-        val dimension = Manager.dimensionType.getDimension(NamespaceID.from("fullbright"))!!
-        val newInstance = Manager.instance.createInstanceContainer(dimension)
+        val dimension = MinecraftServer.getDimensionTypeManager().getDimension(NamespaceID.from("fullbright"))!!
+        val newInstance = MinecraftServer.getInstanceManager().createInstanceContainer(dimension)
 
         newInstance.setGenerator {
             it.modifier().fillHeight(64, 65, Block.GRASS_BLOCK)
@@ -389,7 +283,7 @@ class MinesweeperGame : Game() {
         }
         newInstance.enableAutoChunkLoad(false)
 
-        val radius = 3
+        val radius = 5
         val chunkFutures = mutableListOf<CompletableFuture<Chunk>>()
         for (x in -radius..radius) {
             for (z in -radius..radius) {
@@ -405,34 +299,9 @@ class MinesweeperGame : Game() {
     }
 
     override fun gameWon(winningPlayers: Collection<Player>) {
-//        if (winningPlayers.isEmpty()) {
-            // Game was lost
-//            val losingPlayer = players.firstOrNull { it.uuid == playerThatLost } ?: return
-//
-//            val angleInc = (2 * PI) / (players.size - 1)
-//            var i = 0
-//            players.forEachIndexed { _, plr ->
-//                if (plr.uuid == playerThatLost) return@forEachIndexed
-//
-//                val spawnAngle = angleInc * i
-//                val x = cos(spawnAngle) * 3.5
-//                val z = sin(spawnAngle) * 3.5
-//                val spawnPosition = losingPlayer.position.add(x, 0.0, z).withLookAt(losingPlayer.eyePosition())
-//
-//                val entity = Entity(EntityType.AREA_EFFECT_CLOUD)
-//                val meta = entity.entityMeta as AreaEffectCloudMeta
-//                entity.setNoGravity(true)
-//                meta.radius = 0f
-//                entity.setInstance(instance!!, spawnPosition).thenRun {
-//                    plr.teleport(spawnPosition)
-//                    entity.addPassenger(plr)
-//                }
-//                i++
-//            }
-//        }
     }
 
-    private fun generateBoard(): AbsoluteBlockBatch {
+    fun generateBoard(): AbsoluteBlockBatch {
         flags.set(0)
         bombs.clear()
 
@@ -558,6 +427,156 @@ class MinesweeperGame : Game() {
         }
 
         return stuff()
+    }
+
+
+    private fun breakBlock(player: Player, instance: Instance, blockPosition: Point) {
+
+        if (player.hasTag(GameManager.playerSpectatingTag)) return
+        if (gameState != GameState.PLAYING) return
+
+        if (instance.getBlock(blockPosition.add(0.0, 1.0, 0.0)).name().endsWith("carpet")) {
+            return
+        }
+
+        val boardSizeX = board.size
+        val boardSizeZ = board.first().size
+
+        if (
+            blockPosition.blockY() != Y_OFFSET ||
+            blockPosition.blockX() >= boardSizeX || blockPosition.blockX() < 0 ||
+            blockPosition.blockZ() >= boardSizeZ || blockPosition.blockZ() < 0
+        ) {
+            return
+        }
+
+        if (player.itemInMainHand.isAir) {
+            val clickedX = blockPosition.blockX()
+            val clickedZ = blockPosition.blockZ()
+
+            val clickedSquare = board[clickedX][clickedZ]
+
+            if (clickedSquare == GridConstants.BOMB) {
+                // lose :)
+                val startingBatch = AbsoluteBlockBatch()
+
+                bombs.forEach {
+                    startingBatch.setBlock(it.x, Y_OFFSET, it.z, Block.TNT)
+                }
+                startingBatch.setBlock(blockPosition, Block.TNT)
+
+                startingBatch.apply(instance) {
+                    instance.setBlock(blockPosition, Block.TNT)
+                }
+
+                playerThatLost = player.uuid
+                victory(emptyList())
+                sendMessage(
+                    Component.text()
+                        .append(Component.text(player.username, NamedTextColor.RED))
+                        .append(Component.space())
+                        .append(Component.text(loseMessages.random(), NamedTextColor.GRAY))
+                        .build()
+                )
+
+//                    spawnTNT(blockPosition.add(0.5, 0.0, 0.5), instance, 30)
+
+                return
+            }
+
+            val surroundingBombs = GridUtils.bombsSurrounding(board, clickedX, clickedZ)
+
+            if (clickedSquare != surroundingBombs) {
+                board[clickedX][clickedZ] = surroundingBombs
+                GridConstants.spawnMapFromNumber(surroundingBombs, instance, blockPosition.withY(Y_OFFSET.toDouble()))
+
+                player.playSound(
+                    Sound.sound(
+                        SoundEvent.ENTITY_ITEM_PICKUP,
+                        Sound.Source.MASTER,
+                        0.5f,
+                        0.7f
+                    ),
+                    Sound.Emitter.self()
+                )
+            }
+
+            var future = CompletableFuture.completedFuture(null)
+            val changed = if (firstClick.get()) {
+                firstClick.set(false)
+
+                var iter = 0
+                var list: List<GridPos>
+                var batch: AbsoluteBlockBatch
+                while (true) {
+                    batch = generateBoard()
+                    generateBombs(board, bombsToGenerate, clickedX, clickedZ)
+                    list = GridUtils.revealOpen(board, clickedX, clickedZ)
+
+                    if (!ENABLE_SOLVER || solve(board)) {
+                        break
+                    }
+
+                    iter++
+                }
+
+                board[clickedX][clickedZ] = 0
+                GridConstants.spawnMapFromNumber(0, instance, blockPosition.withY(Y_OFFSET.toDouble()))
+
+                Logger.info("Took ${iter} iterations to get a solvable board")
+
+                future = CompletableFuture()
+                batch.apply(instance) {
+                    future.complete(null)
+                }
+
+                list
+            } else {
+                GridUtils.revealOpen(board, clickedX, clickedZ)
+            }
+
+            val unrevealed = board.sumOf { it.count { it == GridConstants.UNREVEALED } }
+            if (unrevealed <= 0) {
+                victory(players)
+            }
+
+            if (changed.isNotEmpty()) {
+                future.thenRun {
+                    var currentIter = 0
+                    instance.scheduler().submitTask {
+                        instance.playSound(
+                            Sound.sound(
+                                SoundEvent.ENTITY_ITEM_PICKUP,
+                                Sound.Source.MASTER,
+                                0.5f,
+                                0.7f + (currentIter.toFloat() / 50f / 5f)
+                            ), Sound.Emitter.self()
+                        )
+
+                        repeat(5) {
+                            val it = changed[currentIter]
+
+                            val x = it.x
+                            val z = it.z
+                            val gridSquare = board[x][z]
+
+                            GridConstants.spawnMapFromNumber(gridSquare, instance, Pos(x.toDouble(), Y_OFFSET.toDouble(), z.toDouble()))
+                            instance.setBlock(
+                                x, Y_OFFSET + 1, z,
+                                Block.AIR
+                            )
+
+                            currentIter++
+                            if (currentIter >= changed.size) {
+                                return@submitTask TaskSchedule.stop()
+                            }
+                        }
+
+                        TaskSchedule.nextTick()
+                    }
+                }
+            }
+        }
     }
 
 }

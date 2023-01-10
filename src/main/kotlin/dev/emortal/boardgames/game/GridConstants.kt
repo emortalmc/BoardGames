@@ -1,5 +1,6 @@
 package dev.emortal.boardgames.game
 
+import dev.emortal.immortal.util.asPos
 import net.minestom.server.coordinate.Point
 import net.minestom.server.coordinate.Pos
 import net.minestom.server.entity.Entity
@@ -11,12 +12,11 @@ import net.minestom.server.instance.block.Block
 import net.minestom.server.item.ItemStack
 import net.minestom.server.item.Material
 import net.minestom.server.item.metadata.MapMeta
-import world.cepi.kstom.util.asPos
 
 object GridConstants {
 
     val UNREVEALED_BLOCK = Block.LIME_CONCRETE
-    val UNREVEALED_BLOCK_ALT = Block.LIME_WOOL
+    val UNREVEALED_BLOCK_ALT = Block.LIME_CONCRETE_POWDER
     val REVEALED_BLOCK = Block.STONE
 
     val NOTHING = 0

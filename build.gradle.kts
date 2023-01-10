@@ -15,22 +15,29 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.github.Minestom:Minestom:e5d0a43ba4")
-    compileOnly("dev.emortal.immortal:Immortal:3.0.1")
+    implementation("com.github.Minestom:Minestom:91a344aa92")
+    implementation("dev.emortal.immortal:Immortal:3.0.1")
 }
 
 // Take gradle.properties and apply it to resources.
 tasks {
-    processResources {
-        filesMatching("extension.json") {
-            expand(project.properties)
-        }
-    }
-
-    named<ShadowJar>("shadowJar") {
+    named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
         archiveBaseName.set(project.name)
         mergeServiceFiles()
-        minimize()
+
+        manifest {
+            attributes (
+                "Main-Class" to "dev.emortal.boardgames.BoardGamesMainKt",
+                "Multi-Release" to true
+            )
+        }
+
+        transform(com.github.jengelman.gradle.plugins.shadow.transformers.Log4j2PluginsCacheFileTransformer::class.java)
+    }
+
+    withType<AbstractArchiveTask> {
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
     }
 
     build { dependsOn(shadowJar) }
