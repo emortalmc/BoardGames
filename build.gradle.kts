@@ -2,8 +2,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "1.7.22"
-    kotlin("plugin.serialization") version "1.7.22"
+    id("org.jetbrains.kotlin.jvm") version "1.8.10"
+    kotlin("plugin.serialization") version "1.8.10"
     id("com.github.johnrengelman.shadow") version "7.1.2"
     java
 }
@@ -15,8 +15,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.Minestom:Minestom:91a344aa92")
-    implementation("dev.emortal.immortal:Immortal:3.0.1")
+    implementation("com.github.hollow-cube:Minestom:e6d4a2cc91")
+    implementation("com.github.EmortalMC:Immortal:bb0a38dc47")
 }
 
 // Take gradle.properties and apply it to resources.

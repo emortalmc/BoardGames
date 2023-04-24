@@ -12,12 +12,13 @@ import net.minestom.server.entity.GameMode
 import net.minestom.server.event.EventDispatcher
 import net.minestom.server.event.player.PlayerBlockInteractEvent
 import net.minestom.server.event.player.PlayerUseItemOnBlockEvent
-import net.minestom.server.extensions.Extension
 import net.minestom.server.network.packet.client.play.ClientCreativeInventoryActionPacket
 import net.minestom.server.network.packet.client.play.ClientPickItemPacket
 import net.minestom.server.network.packet.client.play.ClientPlayerBlockPlacementPacket
 import net.minestom.server.utils.chunk.ChunkUtils
-import org.tinylog.kotlin.Logger
+import org.slf4j.LoggerFactory
+
+private val LOGGER = LoggerFactory.getLogger(BoardGamesMain::class.java)
 
 fun main() {
     Immortal.initAsServer()
@@ -78,5 +79,9 @@ fun main() {
         showsInSlashPlay = true
     )
 
-    Logger.info("[BoardGames] Initialized!")
+    LOGGER.info("[BoardGames] Initialized!")
+}
+
+class BoardGamesMain {
+
 }

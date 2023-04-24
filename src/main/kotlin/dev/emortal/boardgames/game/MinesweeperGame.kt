@@ -1,5 +1,6 @@
 package dev.emortal.boardgames.game
 
+import dev.emortal.boardgames.BoardGamesMain
 import dev.emortal.boardgames.game.MinesweeperLoseMessages.loseMessages
 import dev.emortal.immortal.game.Game
 import dev.emortal.immortal.game.GameManager
@@ -29,11 +30,13 @@ import net.minestom.server.sound.SoundEvent
 import net.minestom.server.tag.Tag
 import net.minestom.server.timer.TaskSchedule
 import net.minestom.server.utils.NamespaceID
-import org.tinylog.kotlin.Logger
+import org.slf4j.LoggerFactory
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
+private val LOGGER = LoggerFactory.getLogger(MinesweeperGame::class.java)
 
 class MinesweeperGame : Game() {
 
@@ -207,8 +210,8 @@ class MinesweeperGame : Game() {
 
             val bombSurrounding = GridUtils.bombsSurrounding(board, roundedPos.blockX(), roundedPos.blockZ())
 
-            Logger.info("Flags: ${flagSurrounding}")
-            Logger.info("Bombs: ${bombSurrounding}")
+//            LOGGER.info("Flags: ${flagSurrounding}")
+//            LOGGER.info("Bombs: ${bombSurrounding}")
 
             if (flagSurrounding == bombSurrounding) {
                 GridUtils.neighbours(board, roundedPos.blockX(), roundedPos.blockZ())
@@ -418,7 +421,7 @@ class MinesweeperGame : Game() {
 
             if (nextToSearch.isEmpty()) {
                 // UNSOLVABLE
-                Logger.info("failed iter ${solveIter}")
+                LOGGER.info("failed iter ${solveIter}")
                 return false
             }
 
@@ -523,7 +526,7 @@ class MinesweeperGame : Game() {
                 board[clickedX][clickedZ] = 0
                 GridConstants.spawnMapFromNumber(0, instance, blockPosition.withY(Y_OFFSET.toDouble()))
 
-                Logger.info("Took ${iter} iterations to get a solvable board")
+                LOGGER.info("Took ${iter} iterations to get a solvable board")
 
                 future = CompletableFuture()
                 batch.apply(instance) {

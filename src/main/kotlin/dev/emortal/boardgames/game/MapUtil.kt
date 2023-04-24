@@ -1,12 +1,15 @@
 package dev.emortal.boardgames.game
 
+import dev.emortal.boardgames.BoardGamesMain
 import net.minestom.server.entity.Player
 import net.minestom.server.map.framebuffers.Graphics2DFramebuffer
 import net.minestom.server.network.packet.server.play.MapDataPacket
-import org.tinylog.kotlin.Logger
+import org.slf4j.LoggerFactory
 import java.awt.Graphics2D
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.ImageIO
+
+private val LOGGER = LoggerFactory.getLogger(MapUtil::class.java)
 
 object MapUtil {
 
@@ -30,7 +33,7 @@ object MapUtil {
     private fun packetFromPath(path: String, mapId: Int): MapDataPacket {
         val stream = javaClass.classLoader.getResource(path)
 
-        if (stream == null) Logger.error("stream was null")
+        if (stream == null) LOGGER.error("stream was null")
 
         val framebuffer = Graphics2DFramebuffer()
         val renderer: Graphics2D = framebuffer.renderer
