@@ -3,7 +3,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     id("org.jetbrains.kotlin.jvm") version "1.8.21"
-    kotlin("plugin.serialization") version "1.8.10"
+    kotlin("plugin.serialization") version "1.8.21"
     id("com.github.johnrengelman.shadow") version "7.1.2"
     java
 }
