@@ -16,7 +16,7 @@ repositories {
 
 dependencies {
     implementation("com.github.hollow-cube:Minestom:e6d4a2cc91")
-    implementation("com.github.EmortalMC:Immortal:bb0a38dc47")
+    implementation("com.github.EmortalMC:Immortal:2.0.0")
 }
 
 // Take gradle.properties and apply it to resources.
